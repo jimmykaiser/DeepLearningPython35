@@ -70,39 +70,47 @@ class Network(object):
             mini_batches = [
                 training_data[k:k+mini_batch_size]
                 for k in range(0, n, mini_batch_size)]
-            for mini_batch in mini_batches:
-                self.update_mini_batch(mini_batch, eta, j)
+            mini_batches_x, mini_batches_y = [], []
+            for batch in mini_batches:
+                mini_batches_x.append(np.column_stack(tuple([batch[k][0]
+                    for k in range(mini_batch_size)])))
+                mini_batches_y.append(np.column_stack(tuple([batch[k][1]
+                    for k in range(mini_batch_size)])))
+            i = 0
+            for x, y in zip(mini_batches_x, mini_batches_y):
+                self.update_mini_batch(x, y, eta, mini_batch_size, i)
+                i = i + 1
             if test_data:
                 print("Epoch {} : {} / {}".format(j,self.evaluate(test_data),n_test))
             else:
                 print("Epoch {} complete".format(j))
 
-    def update_mini_batch(self, mini_batch, eta, j):
+    def update_mini_batch(self, x, y, eta, mini_batch_size, i):
         """Update the network's weights and biases by applying
         gradient descent using backpropagation to a single mini batch.
         The ``mini_batch`` is a list of tuples ``(x, y)``, and ``eta``
         is the learning rate."""
-        nabla_b = [np.zeros(b.shape) for b in self.biases]
-        nabla_w = [np.zeros(w.shape) for w in self.weights]
-        for x, y in mini_batch:
-            # Find partial derivatives of cost with respect to biases and weights
-            delta_nabla_b, delta_nabla_w = self.backprop(x, y, j)
-            # Add up bias and weight gradients in mini batch
-            nabla_b = [nb+dnb for nb, dnb in zip(nabla_b, delta_nabla_b)]
-            nabla_w = [nw+dnw for nw, dnw in zip(nabla_w, delta_nabla_w)]
+        # for x, y in mini_batch:
+        # Find partial derivatives of cost with respect to biases and weights
+        nabla_b, nabla_w = self.backprop(x, y, i)
+        # Add up bias and weight gradients in mini batch
+        nabla_b = [nb.sum(axis=1) for nb in nabla_b]
+        # nabla_b = [np.asmatrix(nb.sum(axis=1)).transpose() for nb in nabla_b]
+        # nabla_w = [nw.sum(axis=0) for nw in delta_nabla_w]
         # Update weights and biases in network
         # by subtracting the gradient for mini batch (go downhill)
-        self.weights = [w-(eta/len(mini_batch))*nw
+        self.weights = [w-(eta/mini_batch_size)*nw
                         for w, nw in zip(self.weights, nabla_w)]
-        self.biases = [b-(eta/len(mini_batch))*nb
+        self.biases = [b-(eta/mini_batch_size)*nb.reshape((nb.shape[0], 1))
                        for b, nb in zip(self.biases, nabla_b)]
 
-    def backprop(self, x, y, j):
+    def backprop(self, x, y, i):
         """Return a tuple ``(nabla_b, nabla_w)`` representing the
         gradient for the cost function C_x.  ``nabla_b`` and
         ``nabla_w`` are layer-by-layer lists of numpy arrays, similar
         to ``self.biases`` and ``self.weights``."""
-        nabla_b = [np.zeros(b.shape) for b in self.biases]
+        mini_batch_size = x.shape[1]
+        nabla_b = [np.zeros((mini_batch_size, b.shape[0])) for b in self.biases]
         nabla_w = [np.zeros(w.shape) for w in self.weights]
 
         ## Feedforward
@@ -112,7 +120,8 @@ class Network(object):
         for b, w in zip(self.biases, self.weights):
             # go through network and find dot product of weights and x at each layer
             # then add bias and apply sigmoid
-            z = np.dot(w, activation)+b
+            B = np.tile(b, (1, mini_batch_size))
+            z = np.dot(w, activation)+B
             zs.append(z)
             activation = sigmoid(z)
             activations.append(activation)
@@ -120,8 +129,6 @@ class Network(object):
         ## Backward Pass
         # BP1: compute gradient of error of output layer
         # one gradient per neuron (10 total)
-        if j == 5:
-            breakpoint()
         delta = self.cost_derivative(activations[-1], y) * \
             sigmoid_prime(zs[-1])
         nabla_b[-1] = delta
